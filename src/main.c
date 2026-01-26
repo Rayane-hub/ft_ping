@@ -10,6 +10,8 @@
 
 #include <arpa/inet.h>   // inet_ntop
 
+int ft_convert_ip(char *host)
+
 void ft_print_adrr(struct addrinfo *res) {
 	char ip_str[INET_ADDRSTRLEN]; // buffer pour l'IP en texte
 
@@ -48,13 +50,13 @@ int ft_flag(int ac, char **av, char **host) {
 
 int main(int ac, char **av) {
 	int check_v;
-    char *host = NULL;
+	char *host = NULL;
 
 	check_v = ft_flag(ac, av, &host);
-	printf("flag = %d\nhost = |%s|\n", check_v, host);
+	printf("flag = %d\thost = |%s|\n", check_v, host);
 	if (check_v != 0 && check_v != 2)
-			return (check_v);
-
+		return (check_v);
+	ft_convert_ip();
 	if (check_v == 0)
                 printf("mode normal\n");
 	else if (check_v == 2)
