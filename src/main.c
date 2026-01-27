@@ -1,27 +1,11 @@
-#include <unistd.h>        // close
-#include <errno.h>         // errno
-#include <sys/types.h>    // types utilisés par le système (socklen_t, etc.)
-#include <sys/socket.h>   // socket()
-#include <netdb.h>        // getaddrinfo(), freeaddrinfo()
-#include <netinet/in.h>    // IPPROTO_ICMP
+#include <sys/socket.h>	//struct sockaddr
+#include <netdb.h>	// getaddrinfo(), freeaddrinfo()
+#include <stdio.h>	// printf
+#include <string.h>	// memset, strcmp
+#include <arpa/inet.h> //inet_ntop()
 
-#include <stdio.h>        // printf
-#include <string.h>       // memset, strcmp
+#define INET_ADDRSTRLEN 16
 
-#include <arpa/inet.h>   // inet_ntop
-
-int ft_convert_ip(char *host)
-
-void ft_print_adrr(struct addrinfo *res) {
-	char ip_str[INET_ADDRSTRLEN]; // buffer pour l'IP en texte
-
-	struct sockaddr_in *addr_in = (struct sockaddr_in *)res->ai_addr; // caster vers IPv4
-
-	inet_ntop(AF_INET, &addr_in->sin_addr, ip_str, sizeof(ip_str)); // convertir binaire -> chaîne
-
-	printf("Resolved IP = %s\n", ip_str); // afficher l'adresse résolue
-
-}
 
 int ft_flag(int ac, char **av, char **host) {
 	int check_v; // 0 = normal, 2 = verbose
@@ -48,6 +32,13 @@ int ft_flag(int ac, char **av, char **host) {
 	return (check_v);
 }
 
+void ft_print_ip(struct sockaddr_in *addr, char *host)
+{
+	char buffer[INET_ADDRSTRLEN];
+	inet_ntop(AF_INET, &addr->sin_addr, buffer, INET_ADDRSTRLEN);
+	printf("\nIP de %s = %s\n\n", host, buffer);
+}
+
 int main(int ac, char **av) {
 	int check_v;
 	char *host = NULL;
@@ -56,11 +47,27 @@ int main(int ac, char **av) {
 	printf("flag = %d\thost = |%s|\n", check_v, host);
 	if (check_v != 0 && check_v != 2)
 		return (check_v);
-	ft_convert_ip();
+
+	struct addrinfo hints;
+	struct addrinfo *res;
+
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_INET;
+
+	if (getaddrinfo(host, NULL, &hints, &res) != 0)
+		return(printf("ping: unknown host\n"), 1);
+
+	struct sockaddr_in *addr = (struct sockaddr_in *)res->ai_addr;
+	ft_print_ip(addr, host);
+
+	int sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+	if (sockfd == -1)
+		return(printf("err socket\n"), 1);
+
 	if (check_v == 0)
                 printf("mode normal\n");
 	else if (check_v == 2)
 			printf("mode verbose\n");
-
+	freeaddrinfo(res);
         return (0);
 }
