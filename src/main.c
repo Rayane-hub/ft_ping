@@ -1,13 +1,21 @@
 #include <sys/socket.h>	//struct sockaddr
-#include <netdb.h>	// getaddrinfo(), freeaddrinfo()
-#include <stdio.h>	// printf
-#include <string.h>	// memset, strcmp
-#include <arpa/inet.h> //inet_ntop()
-#include <stdlib.h>//exit()
-#include <netinet/ip_icmp.h>   // struct icmphdr
+#include <netdb.h>		// getaddrinfo(), freeaddrinfo()
+#include <stdio.h>		// printf()
+#include <string.h>		// memset(), strcmp()
+#include <arpa/inet.h> 	//inet_ntop(),htons()
+#include <stdlib.h>		//exit()
+#include <netinet/ip_icmp.h> // struct icmphdr
+#include <unistd.h> 	// getpid()
+
 #define INET_ADDRSTRLEN 16
 #define PACKET_SIZE 64
 
+typedef struct ping_data {
+	struct addrinfo *res;
+	int sockfd;
+	char packet[PACKET_SIZE];
+	struct icmphdr *icmp;
+}PingData;
 
 int ft_flag(int ac, char **av, char **host) {
 	int check_v; // 0 = normal, 2 = verbose
@@ -42,24 +50,33 @@ void ft_print_ip(struct sockaddr_in *addr, char *host){
 	printf("\nIP de %s = %s\n\n", host, buffer);
 }
 
-int ft_icmp_builder()
+void	ft_icmp_builder(PingData *data)
 {
-	char packet[PACKET_SIZE];
+	memset(data->packet, 0, PACKET_SIZE);
 
-	struct icmphdr *icmp = (struct icmphdr *)packet;
-	icmp->type = 8;
-	icmp->code = 0;
-	icmp->checksum = 0;
-	//icmp->un.echo.id = ?
-	//icmp->un.echo.sequence = ?
+
+	data->icmp = (struct icmphdr *)data->packet;
+	data->icmp->type = 8;
+	data->icmp->code = 0;
+	data->icmp->checksum = 0;
+	data->icmp->un.echo.id = htons(getpid() & 0xFFFF);
+	printf("id = %d\n", data->icmp->un.echo.id);
+	data->icmp->un.echo.sequence = 0;
 	
 	//calcul checksum
-	return 0;
+	uint32_t sum = 0;
+	uint16_t *ptr = (uint16_t *)data->packet;
+	for (size_t i = 0; i < PACKET_SIZE / 2; i++)
+		sum += ptr[i];
+	sum = (sum & 0xFFFF) + (sum >> 16);
+	data->icmp->checksum = (uint16_t)sum;
+	printf("checksum = %d\n", data->icmp->checksum);
 }
 
 int main(int ac, char **av) {
 	int check_v;
 	char *host = NULL;
+	PingData data;
 
 	check_v = ft_flag(ac, av, &host);
 	printf("flag = %d\thost = |%s|\n", check_v, host);
@@ -67,27 +84,26 @@ int main(int ac, char **av) {
 		return (check_v);
 
 	struct addrinfo hints;
-	struct addrinfo *res;
 	
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_INET;
 
-	if (getaddrinfo(host, NULL, &hints, &res) != 0)
+	if (getaddrinfo(host, NULL, &hints, &data.res) != 0)
 		return(printf("ping: unknown host\n"), 1);
 
-	struct sockaddr_in *addr = (struct sockaddr_in *)res->ai_addr;
+	struct sockaddr_in *addr = (struct sockaddr_in *)data.res->ai_addr;
 	ft_print_ip(addr, host);
 	
-	int sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
-	if (sockfd == -1)
+	data.sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+	if (data.sockfd == -1)
 		return(printf("err socket\n"), 1);
 
-	ft_icmp_builder();
+	ft_icmp_builder(&data);
 
 	if (check_v == 0)
                 printf("mode normal\n");
 	else if (check_v == 2)
 			printf("mode verbose\n");
-	freeaddrinfo(res);
+	freeaddrinfo(data.res);
     return (0);
 }
