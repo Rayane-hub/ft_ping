@@ -91,8 +91,8 @@ int main(int ac, char **av) {
 	if (getaddrinfo(host, NULL, &hints, &data.res) != 0)
 		return(printf("ping: unknown host\n"), 1);
 
-	struct sockaddr_in *addr = (struct sockaddr_in *)data.res->ai_addr;
-	ft_print_ip(addr, host);
+	struct sockaddr_in *dest_addr = (struct sockaddr_in *)data.res->ai_addr;
+	ft_print_ip(dest_addr, host);
 	
 	data.sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
 	if (data.sockfd == -1)
@@ -100,6 +100,10 @@ int main(int ac, char **av) {
 
 	ft_icmp_builder(&data);
 
+	ssize_t send = sendto(data.sockfd, data.packet, PACKET_SIZE, 0, (struct sockaddr *)data.res->ai_addr, sizeof(struct sockaddr_in));
+	if (send == -1)
+    	perror("sendto");
+	
 	if (check_v == 0)
                 printf("mode normal\n");
 	else if (check_v == 2)
