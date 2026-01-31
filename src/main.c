@@ -14,7 +14,7 @@
 typedef struct ping_data {
 	struct addrinfo *res;
 	int sockfd;
-	char packet[PACKET_SIZE];
+	char send_packet[PACKET_SIZE];
 	struct icmphdr *icmp;
 }PingData;
 
@@ -45,12 +45,11 @@ int ft_flag(int ac, char **av, char **host) {
 	return (check_v);
 }
 
-
 void	ft_icmp_builder(PingData *data)
 {
-	memset(data->packet, 0, PACKET_SIZE);
+	memset(data->send_packet, 0, PACKET_SIZE);
 	
-	data->icmp = (struct icmphdr *)data->packet;
+	data->icmp = (struct icmphdr *)data->send_packet;
 	data->icmp->type = ICMP_ECHO; // 8
 	data->icmp->code = 0;
 	unsigned short pid = getpid() & 0xFFFF;
@@ -62,7 +61,7 @@ void ft_icmp_checksum(PingData *data)
 	// Calcul du checksum uniquement sur la taille de l'en-tête ICMP (8 octets)
 	data->icmp->checksum = 0;
 	uint32_t sum = 0;
-	uint16_t *ptr = (uint16_t *)data->packet;
+	uint16_t *ptr = (uint16_t *)data->send_packet;
 	size_t icmp_len = sizeof(struct icmphdr); // 8 octets
 	for (size_t i = 0; i < icmp_len / 2; i++)
 		sum += ptr[i];
@@ -81,7 +80,7 @@ int main(int ac, char **av) {
 		return (check_v);
 
 	struct addrinfo hints;
-	
+
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_INET;
 
@@ -89,9 +88,9 @@ int main(int ac, char **av) {
 		return(printf("ping: unknown host\n"), 1);
 
 	struct sockaddr_in *dest_addr = (struct sockaddr_in *)data.res->ai_addr;
-	char buffer[INET_ADDRSTRLEN];
-	inet_ntop(AF_INET, &dest_addr->sin_addr, buffer, INET_ADDRSTRLEN);
-	printf("PING %s (%s): ? data bytes\n", host, buffer);
+	char addr_ip[INET_ADDRSTRLEN];
+	inet_ntop(AF_INET, &dest_addr->sin_addr, addr_ip, INET_ADDRSTRLEN);
+	printf("PING %s (%s): ? data bytes\n", host, addr_ip);
 	
 	data.sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
 	if (data.sockfd == -1)
@@ -99,32 +98,29 @@ int main(int ac, char **av) {
 
 	ft_icmp_builder(&data);
 	uint16_t sequence = 0;
-	char recv_buffer[PACKET_SIZE]; // Buffer séparé pour la réception
+	char recv_packet[PACKET_SIZE]; // Buffer séparé pour la réception
 	while (1){
 		data.icmp->un.echo.sequence = htons(sequence);
 		ft_icmp_checksum(&data);
-		ssize_t send = sendto(data.sockfd, data.packet, PACKET_SIZE, 0, (struct sockaddr *)data.res->ai_addr, sizeof(struct sockaddr_in));
+		ssize_t send = sendto(data.sockfd, data.send_packet, PACKET_SIZE, 0, (struct sockaddr *)data.res->ai_addr, sizeof(struct sockaddr_in));
 		if (send == -1)
 			perror("sendto");
 		
 		struct sockaddr_in src_addr;
 		socklen_t addrlen = sizeof(src_addr);
-		ssize_t recv = recvfrom(data.sockfd, recv_buffer, PACKET_SIZE, 0, (struct sockaddr *)&src_addr, &addrlen);
-		if (recv == -1)
+		ssize_t recv_bytes = recvfrom(data.sockfd, recv_packet, PACKET_SIZE, 0, (struct sockaddr *)&src_addr, &addrlen);
+		if (recv_bytes == -1)
 			perror("recv:");
-		inet_ntop(AF_INET, &src_addr.sin_addr, buffer, INET_ADDRSTRLEN);
-        if (recv > 0) 
+		inet_ntop(AF_INET, &src_addr.sin_addr, addr_ip, INET_ADDRSTRLEN);
+        if (recv_bytes > 0) 
 		{
-            struct iphdr *ip = (struct iphdr *)recv_buffer;
-            uint8_t ihl = ip->ihl;
-            int offset = ihl * 4;
-            struct icmphdr *icmp_header = (struct icmphdr *)(recv_buffer + offset);
+			// recv_packet: [ IP_HEADER | ICMP_HEADER | ICMP_DATA ] ← paquet reçu complet
+            struct iphdr *iphdr = (struct iphdr *)recv_packet; //contient les information ip du packet recu  / ihl = Internet Header Length 
+            struct icmphdr *icmphdr = (struct icmphdr *)(recv_packet + iphdr->ihl * 4);
 			//convertie la sequence du reseau vers la langue du pc (big endian -> little)
-            printf("%ld bytes from %s: icmp_seq=%d, ttl=?, time=? ms\t", recv, buffer, ntohs(icmp_header->un.echo.sequence));
-			printf("type recv = %d, code = %d\n", icmp_header->type, icmp_header->code);
+            printf("%ld bytes from %s: icmp_seq=%d, ttl=%d, time=? ms\n", recv_bytes, addr_ip, ntohs(icmphdr->un.echo.sequence), iphdr->ttl);
 		}
 		sequence++;
-		printf("seq = %d\n", sequence);
 		sleep(1);
 	}
 	if (check_v == 0)
