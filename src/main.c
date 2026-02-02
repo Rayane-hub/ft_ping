@@ -1,4 +1,5 @@
 #include <sys/socket.h>	//struct sockaddr
+#include <sys/time.h>	//gettimeofday()
 #include <netdb.h>		// getaddrinfo(), freeaddrinfo()
 #include <stdio.h>		// printf()
 #include <string.h>		// memset(), strcmp()
@@ -7,6 +8,7 @@
 #include <netinet/ip_icmp.h> // struct icmphdr
 #include <netinet/ip.h> // struct iphdr
 #include <unistd.h> 	// getpid()
+
 
 #define INET_ADDRSTRLEN 16
 #define PACKET_SIZE 64
@@ -99,9 +101,14 @@ int main(int ac, char **av) {
 	ft_icmp_builder(&data);
 	uint16_t sequence = 0;
 	char recv_packet[PACKET_SIZE]; // Buffer séparé pour la réception
-	while (1){
+	while (1)
+	{
 		data.icmp->un.echo.sequence = htons(sequence);
+
+		gettimeofday((struct timeval *)(data.send_packet + sizeof(struct icmphdr)), NULL);
+		//struct timeval *tv1 = (struct timeval *)(data.send_packet + sizeof(struct icmphdr));
 		ft_icmp_checksum(&data);
+		
 		ssize_t send = sendto(data.sockfd, data.send_packet, PACKET_SIZE, 0, (struct sockaddr *)data.res->ai_addr, sizeof(struct sockaddr_in));
 		if (send == -1)
 			perror("sendto");
@@ -117,8 +124,13 @@ int main(int ac, char **av) {
 			// recv_packet: [ IP_HEADER | ICMP_HEADER | ICMP_DATA ] ← paquet reçu complet
             struct iphdr *iphdr = (struct iphdr *)recv_packet; //contient les information ip du packet recu  / ihl = Internet Header Length 
             struct icmphdr *icmphdr = (struct icmphdr *)(recv_packet + iphdr->ihl * 4);
+
+			//gettimeofday((struct timeval *)(data.send_packet + sizeof(struct icmphdr)), NULL);
+			//struct timeval *tv2 = (struct timeval*)(data.send_packet + sizeof(struct icmphdr));
+			//time_t deltaT = tv2->tv_sec - tv1->tv_sec;
+			
 			//convertie la sequence du reseau vers la langue du pc (big endian -> little)
-            printf("%ld bytes from %s: icmp_seq=%d, ttl=%d, time=? ms\n", recv_bytes, addr_ip, ntohs(icmphdr->un.echo.sequence), iphdr->ttl);
+			printf("%ld bytes from %s: icmp_seq=%d, ttl=%d, time=? ms\n", recv_bytes, addr_ip, ntohs(icmphdr->un.echo.sequence), iphdr->ttl);
 		}
 		sequence++;
 		sleep(1);
