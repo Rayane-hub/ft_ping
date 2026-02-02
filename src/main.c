@@ -64,7 +64,7 @@ void ft_icmp_checksum(PingData *data)
 	data->icmp->checksum = 0;
 	uint32_t sum = 0;
 	uint16_t *ptr = (uint16_t *)data->send_packet;
-	size_t icmp_len = sizeof(struct icmphdr); // 8 octets
+	size_t icmp_len = PACKET_SIZE; // 8 octets
 	for (size_t i = 0; i < icmp_len / 2; i++)
 		sum += ptr[i];
 	sum = (sum & 0xFFFF) + (sum >> 16);
@@ -106,7 +106,8 @@ int main(int ac, char **av) {
 		data.icmp->un.echo.sequence = htons(sequence);
 
 		gettimeofday((struct timeval *)(data.send_packet + sizeof(struct icmphdr)), NULL);
-		//struct timeval *tv1 = (struct timeval *)(data.send_packet + sizeof(struct icmphdr));
+		struct timeval tv1 = *(struct timeval *)(data.send_packet + sizeof(struct icmphdr));
+
 		ft_icmp_checksum(&data);
 		
 		ssize_t send = sendto(data.sockfd, data.send_packet, PACKET_SIZE, 0, (struct sockaddr *)data.res->ai_addr, sizeof(struct sockaddr_in));
@@ -125,12 +126,11 @@ int main(int ac, char **av) {
             struct iphdr *iphdr = (struct iphdr *)recv_packet; //contient les information ip du packet recu  / ihl = Internet Header Length 
             struct icmphdr *icmphdr = (struct icmphdr *)(recv_packet + iphdr->ihl * 4);
 
-			//gettimeofday((struct timeval *)(data.send_packet + sizeof(struct icmphdr)), NULL);
-			//struct timeval *tv2 = (struct timeval*)(data.send_packet + sizeof(struct icmphdr));
-			//time_t deltaT = tv2->tv_sec - tv1->tv_sec;
-			
+			gettimeofday((struct timeval *)(data.send_packet + sizeof(struct icmphdr)), NULL);
+			struct timeval tv2 = *(struct timeval *)(data.send_packet + sizeof(struct icmphdr));
+			time_t deltaT = (((tv2.tv_sec - tv1.tv_sec) * 1000) + ((tv2.tv_usec - tv1.tv_usec) / 1000));
 			//convertie la sequence du reseau vers la langue du pc (big endian -> little)
-			printf("%ld bytes from %s: icmp_seq=%d, ttl=%d, time=? ms\n", recv_bytes, addr_ip, ntohs(icmphdr->un.echo.sequence), iphdr->ttl);
+			printf("%ld bytes from %s: icmp_seq=%d, ttl=%d, time=%ld ms\n", recv_bytes, addr_ip, ntohs(icmphdr->un.echo.sequence), iphdr->ttl, deltaT);
 		}
 		sequence++;
 		sleep(1);
