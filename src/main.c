@@ -8,17 +8,30 @@
 #include <netinet/ip_icmp.h> // struct icmphdr
 #include <netinet/ip.h> // struct iphdr
 #include <unistd.h> 	// getpid()
+#include <errno.h> 		// errno
+#include <signal.h>		//signal()
+#include <float.h>		//DBL_MAX
 
 
 #define INET_ADDRSTRLEN 16
 #define PACKET_SIZE 64
+
+
 
 typedef struct ping_data {
 	struct addrinfo *res;
 	int sockfd;
 	char send_packet[PACKET_SIZE];
 	struct icmphdr *icmp;
-}PingData;
+	char *host;
+	int received;
+	int lost;
+	double rtt_min;
+	double rtt_max;
+	double rtt_sum;
+}	PingData;
+
+PingData data;
 
 int ft_flag(int ac, char **av, char **host) {
 	int check_v; // 0 = normal, 2 = verbose
@@ -72,44 +85,71 @@ void ft_icmp_checksum(PingData *data)
 	data->icmp->checksum = ~((uint16_t)sum);
 }
 
+void handle_sigint()
+{
+
+	printf("--- %s ping statistics ---\n", data.host);
+	printf("%d packets transmitted, %d packets received, %d%% packet loss\n", ntohs(data.icmp->un.echo.sequence)+1, data.received, data.lost);	
+	printf("round-trip min/avg/max/stddev = %.3f/%.3f/%.3f/ ms", data.rtt_min, data.rtt_sum/data.received, data.rtt_max);
+	exit(0);
+}
+
+void	ft_stat(double deltaT)
+{
+	if (data.rtt_min > deltaT)
+		data.rtt_min = deltaT;
+	if (data.rtt_max < deltaT)
+		data.rtt_max = deltaT;
+	data.rtt_sum += deltaT;
+}
+
 int main(int ac, char **av) {
 	int check_v;
-	char *host = NULL;
-	PingData data;
 
-	check_v = ft_flag(ac, av, &host);
+	data.received = 0;
+	data.rtt_max = 0;
+	data.rtt_min = DBL_MAX;
+	data.rtt_sum = 0;
+	check_v = ft_flag(ac, av, &data.host);
 	if (check_v != 0 && check_v != 2)
 		return (check_v);
 
 	struct addrinfo hints;
-
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_INET;
 
-	if (getaddrinfo(host, NULL, &hints, &data.res) != 0)
+	if (getaddrinfo(data.host, NULL, &hints, &data.res) != 0)
 		return(printf("ping: unknown host\n"), 1);
 
 	struct sockaddr_in *dest_addr = (struct sockaddr_in *)data.res->ai_addr;
 	char addr_ip[INET_ADDRSTRLEN];
 	inet_ntop(AF_INET, &dest_addr->sin_addr, addr_ip, INET_ADDRSTRLEN);
-	printf("PING %s (%s): ? data bytes\n", host, addr_ip);
+	printf("PING %s (%s): %ld data bytes\n", 
+		data.host, addr_ip, PACKET_SIZE - sizeof(struct icmphdr));
 	
 	data.sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
 	if (data.sockfd == -1)
 		return(printf("err socket\n"), 1);
 
+	struct timeval timeout;
+	timeout.tv_sec = 1;
+	timeout.tv_usec = 0;
+	setsockopt(data.sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
 	ft_icmp_builder(&data);
 	uint16_t sequence = 0;
 	char recv_packet[PACKET_SIZE]; // Buffer séparé pour la réception
+	
 	while (1)
 	{
+		signal(SIGINT, handle_sigint);
+
 		data.icmp->un.echo.sequence = htons(sequence);
 
 		gettimeofday((struct timeval *)(data.send_packet + sizeof(struct icmphdr)), NULL);
 		struct timeval tv1 = *(struct timeval *)(data.send_packet + sizeof(struct icmphdr));
-
 		ft_icmp_checksum(&data);
-		
+	
 		ssize_t send = sendto(data.sockfd, data.send_packet, PACKET_SIZE, 0, (struct sockaddr *)data.res->ai_addr, sizeof(struct sockaddr_in));
 		if (send == -1)
 			perror("sendto");
@@ -118,21 +158,30 @@ int main(int ac, char **av) {
 		socklen_t addrlen = sizeof(src_addr);
 		ssize_t recv_bytes = recvfrom(data.sockfd, recv_packet, PACKET_SIZE, 0, (struct sockaddr *)&src_addr, &addrlen);
 		if (recv_bytes == -1)
-			perror("recv:");
-		inet_ntop(AF_INET, &src_addr.sin_addr, addr_ip, INET_ADDRSTRLEN);
-        if (recv_bytes > 0) 
 		{
+			if (errno == EAGAIN || errno == EWOULDBLOCK)
+				printf("Request timeout for icmp_seq %d\n", sequence);// puis incrémenter les stats “perdus” puis passer au ping suivant
+			else
+				perror("recv:");
+		}
+		inet_ntop(AF_INET, &src_addr.sin_addr, addr_ip, INET_ADDRSTRLEN);
+        if (recv_bytes > 0)
+		{
+			data.received++;
 			// recv_packet: [ IP_HEADER | ICMP_HEADER | ICMP_DATA ] ← paquet reçu complet
             struct iphdr *iphdr = (struct iphdr *)recv_packet; //contient les information ip du packet recu  / ihl = Internet Header Length 
             struct icmphdr *icmphdr = (struct icmphdr *)(recv_packet + iphdr->ihl * 4);
-
-			gettimeofday((struct timeval *)(data.send_packet + sizeof(struct icmphdr)), NULL);
-			struct timeval tv2 = *(struct timeval *)(data.send_packet + sizeof(struct icmphdr));
-			time_t deltaT = (((tv2.tv_sec - tv1.tv_sec) * 1000) + ((tv2.tv_usec - tv1.tv_usec) / 1000));
+			struct timeval tv2;
+			gettimeofday(&tv2, NULL);
+			//printf("tv1sec = %ld\t tv2sec = %ld\n", tv1.tv_sec, tv2.tv_sec);
+			double deltaT = (((tv2.tv_sec - tv1.tv_sec) * 1000.0) + ((tv2.tv_usec - tv1.tv_usec) / 1000.0));
+			ft_stat(deltaT);
 			//convertie la sequence du reseau vers la langue du pc (big endian -> little)
-			printf("%ld bytes from %s: icmp_seq=%d, ttl=%d, time=%ld ms\n", recv_bytes, addr_ip, ntohs(icmphdr->un.echo.sequence), iphdr->ttl, deltaT);
+			printf("%ld bytes from %s: icmp_seq=%d, ttl=%d, time=%.3f ms\n", 
+				recv_bytes, addr_ip, ntohs(icmphdr->un.echo.sequence), iphdr->ttl, deltaT);
 		}
 		sequence++;
+		data.lost = ((sequence - data.received) * 100) / sequence;
 		sleep(1);
 	}
 	if (check_v == 0)
