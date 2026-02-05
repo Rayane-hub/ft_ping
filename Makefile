@@ -19,7 +19,7 @@ all: $(NAME)
 # Commande exécutée pour créer le fichier ft_ping
 # Elle assemble tous les fichiers .o en un exécutable
 $(NAME): $(OBJS)
-	$(CC) $(CFLAGS) $(OBJS) -o $(NAME)
+	$(CC) $(CFLAGS) $(OBJS) -lm -o $(NAME)
 
 # Commande exécutée pour créer un fichier .o à partir d’un fichier .c
 # gcc compile le .c sans créer d’exécutable (-c)

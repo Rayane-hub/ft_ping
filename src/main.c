@@ -11,12 +11,11 @@
 #include <errno.h> 		// errno
 #include <signal.h>		//signal()
 #include <float.h>		//DBL_MAX
-
+#include <stdbool.h>	//bool
+#include <math.h> 		//sqrt()
 
 #define INET_ADDRSTRLEN 16
 #define PACKET_SIZE 64
-
-
 
 typedef struct ping_data {
 	struct addrinfo *res;
@@ -29,9 +28,12 @@ typedef struct ping_data {
 	double rtt_min;
 	double rtt_max;
 	double rtt_sum;
+	double rtt_sum_sq;
+	unsigned short pid;
 }	PingData;
 
 PingData data;
+bool stop = 0;
 
 int ft_flag(int ac, char **av, char **host) {
 	int check_v; // 0 = normal, 2 = verbose
@@ -60,15 +62,15 @@ int ft_flag(int ac, char **av, char **host) {
 	return (check_v);
 }
 
-void	ft_icmp_builder(PingData *data)
+void ft_icmp_builder(PingData *data)
 {
 	memset(data->send_packet, 0, PACKET_SIZE);
 	
 	data->icmp = (struct icmphdr *)data->send_packet;
 	data->icmp->type = ICMP_ECHO; // 8
 	data->icmp->code = 0;
-	unsigned short pid = getpid() & 0xFFFF;
-	data->icmp->un.echo.id = htons(pid); //convertie le pid du pc vers la langue du reseau (little -> big endian)
+	data->pid = getpid() & 0xFFFF;
+	data->icmp->un.echo.id = htons(data->pid); //convertie le pid du pc vers la langue du reseau (little -> big endian)
 }
 
 void ft_icmp_checksum(PingData *data)
@@ -87,20 +89,17 @@ void ft_icmp_checksum(PingData *data)
 
 void handle_sigint()
 {
-
-	printf("--- %s ping statistics ---\n", data.host);
-	printf("%d packets transmitted, %d packets received, %d%% packet loss\n", ntohs(data.icmp->un.echo.sequence)+1, data.received, data.lost);	
-	printf("round-trip min/avg/max/stddev = %.3f/%.3f/%.3f/ ms", data.rtt_min, data.rtt_sum/data.received, data.rtt_max);
-	exit(0);
+	stop = 1;
 }
 
-void	ft_stat(double deltaT)
+void ft_stat(double deltaT)
 {
 	if (data.rtt_min > deltaT)
 		data.rtt_min = deltaT;
 	if (data.rtt_max < deltaT)
 		data.rtt_max = deltaT;
 	data.rtt_sum += deltaT;
+	data.rtt_sum_sq += deltaT*deltaT;
 }
 
 int main(int ac, char **av) {
@@ -110,6 +109,8 @@ int main(int ac, char **av) {
 	data.rtt_max = 0;
 	data.rtt_min = DBL_MAX;
 	data.rtt_sum = 0;
+	data.rtt_sum_sq = 0;
+	data.host = NULL;
 	check_v = ft_flag(ac, av, &data.host);
 	if (check_v != 0 && check_v != 2)
 		return (check_v);
@@ -123,13 +124,13 @@ int main(int ac, char **av) {
 
 	struct sockaddr_in *dest_addr = (struct sockaddr_in *)data.res->ai_addr;
 	char addr_ip[INET_ADDRSTRLEN];
-	inet_ntop(AF_INET, &dest_addr->sin_addr, addr_ip, INET_ADDRSTRLEN);
-	printf("PING %s (%s): %ld data bytes\n", 
-		data.host, addr_ip, PACKET_SIZE - sizeof(struct icmphdr));
+	if (!inet_ntop(AF_INET, &dest_addr->sin_addr, addr_ip, INET_ADDRSTRLEN))
+		return (perror("inet_ntop"), freeaddrinfo(data.res), 1);
+
 	
 	data.sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
 	if (data.sockfd == -1)
-		return(printf("err socket\n"), 1);
+		return(perror("socket"), 1);
 
 	struct timeval timeout;
 	timeout.tv_sec = 1;
@@ -138,11 +139,16 @@ int main(int ac, char **av) {
 
 	ft_icmp_builder(&data);
 	uint16_t sequence = 0;
+	int transmitted = 0;
 	char recv_packet[PACKET_SIZE]; // Buffer séparé pour la réception
+	if (check_v == 0)
+        printf("PING %s (%s): %ld data bytes\n", data.host, addr_ip, PACKET_SIZE - sizeof(struct icmphdr));
+	else if (check_v == 2)
+		printf("PING %s (%s): %ld data bytes, id 0x%04x = %d \n", data.host, addr_ip, PACKET_SIZE - sizeof(struct icmphdr), data.pid, data.pid);
 	
-	while (1)
+	signal(SIGINT, handle_sigint);
+	while (!stop)
 	{
-		signal(SIGINT, handle_sigint);
 
 		data.icmp->un.echo.sequence = htons(sequence);
 
@@ -152,7 +158,12 @@ int main(int ac, char **av) {
 	
 		ssize_t send = sendto(data.sockfd, data.send_packet, PACKET_SIZE, 0, (struct sockaddr *)data.res->ai_addr, sizeof(struct sockaddr_in));
 		if (send == -1)
+		{
 			perror("sendto");
+			sleep(1);
+			continue;
+		}
+		transmitted++;
 		
 		struct sockaddr_in src_addr;
 		socklen_t addrlen = sizeof(src_addr);
@@ -160,11 +171,12 @@ int main(int ac, char **av) {
 		if (recv_bytes == -1)
 		{
 			if (errno == EAGAIN || errno == EWOULDBLOCK)
-				printf("Request timeout for icmp_seq %d\n", sequence);// puis incrémenter les stats “perdus” puis passer au ping suivant
+				printf("Request timeout for icmp_seq %d\n", sequence);
 			else
 				perror("recv:");
 		}
-		inet_ntop(AF_INET, &src_addr.sin_addr, addr_ip, INET_ADDRSTRLEN);
+		if (!inet_ntop(AF_INET, &src_addr.sin_addr, addr_ip, INET_ADDRSTRLEN))
+			return (perror("inet_ntop"), freeaddrinfo(data.res), 1);
         if (recv_bytes > 0)
 		{
 			data.received++;
@@ -173,7 +185,6 @@ int main(int ac, char **av) {
             struct icmphdr *icmphdr = (struct icmphdr *)(recv_packet + iphdr->ihl * 4);
 			struct timeval tv2;
 			gettimeofday(&tv2, NULL);
-			//printf("tv1sec = %ld\t tv2sec = %ld\n", tv1.tv_sec, tv2.tv_sec);
 			double deltaT = (((tv2.tv_sec - tv1.tv_sec) * 1000.0) + ((tv2.tv_usec - tv1.tv_usec) / 1000.0));
 			ft_stat(deltaT);
 			//convertie la sequence du reseau vers la langue du pc (big endian -> little)
@@ -181,13 +192,30 @@ int main(int ac, char **av) {
 				recv_bytes, addr_ip, ntohs(icmphdr->un.echo.sequence), iphdr->ttl, deltaT);
 		}
 		sequence++;
-		data.lost = ((sequence - data.received) * 100) / sequence;
+		if (transmitted > 0)
+			data.lost = ((transmitted - data.received) * 100) / transmitted;
 		sleep(1);
 	}
-	if (check_v == 0)
-                printf("mode normal\n");
-	else if (check_v == 2)
-			printf("mode verbose\n");
+	double avg = 0;
+	double variance = 0;
+	double stddev = 0;
+	if (data.received == 0)
+	{
+		data.rtt_min = 0;
+		data.rtt_max = 0;
+	}
+	else
+	{
+		avg = data.rtt_sum / data.received;
+		variance = (data.rtt_sum_sq / data.received) - (avg * avg);
+		if (variance < 0)
+			variance = 0;
+		stddev = sqrt(variance);
+	}
+	printf("--- %s ping statistics ---\n", data.host);
+	printf("%d packets transmitted, %d packets received, %d%% packet loss\n", transmitted, data.received, data.lost);	
+	printf("round-trip min/avg/max/stddev = %.3f/%.3f/%.3f/%.3f ms\n", data.rtt_min, avg, data.rtt_max, stddev);
+
 	freeaddrinfo(data.res);
     return (0);
 }
