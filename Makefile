@@ -15,12 +15,11 @@ CFLAGS 	= -Wall -Wextra -Werror -I$(INC_DIR) -MMD -MP
 # Liste des fichiers .o générés à partir des .c
 OBJS	= $(SRCS:.c=.o)
 
-DEPS	= $(OBJS:.o=.d)
--include $(DEPS)
-
-
 # Make vérifie si le fichier ft_ping existe et est à jour sinon le creer
 all: $(NAME)
+
+DEPS	= $(OBJS:.o=.d)
+-include $(DEPS)
 
 # Commande exécutée pour créer le fichier ft_ping
 # Elle assemble tous les fichiers .o en un exécutable

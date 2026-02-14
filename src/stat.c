@@ -31,5 +31,4 @@ void print_stat(PingData *data)
 	printf("--- %s ping statistics ---\n", data->host);
 	printf("%d packets transmitted, %d packets received, %d%% packet loss\n", data->transmitted, data->received, data->lost);	
 	printf("round-trip min/avg/max/stddev = %.3f/%.3f/%.3f/%.3f ms\n", data->rtt_min, avg, data->rtt_max, stddev);
-
 }
