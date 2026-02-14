@@ -2,7 +2,7 @@
 NAME	= ft_ping
 
 # Fichier(s) .c présents dans le projet
-SRCS	= src/main.c src/net.c src/stat.c
+SRCS	= src/main.c src/net.c src/stat.c src/init.c src/loop.c
 
 # Programme utilisé pour compiler (gcc)
 CC		= gcc
