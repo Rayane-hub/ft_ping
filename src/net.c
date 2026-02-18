@@ -1,7 +1,8 @@
-/* Prépare les paquets ICMP avant envoi. */
+/* Prepare ICMP packets before sending. */
+
 #include "ping.h"
 
-/* Construit le paquet ICMP Echo Request (type, code, id) avant envoi. */
+/* Build the ICMP Echo Request header (type, code, id). */
 void icmp_builder(PingData *data)
 {
 	memset(data->send_packet, 0, PACKET_SIZE);
@@ -11,10 +12,10 @@ void icmp_builder(PingData *data)
 	data->icmp->code = 0;
 
 	data->pid = getpid() & 0xFFFF;
-	data->icmp->un.echo.id = htons(data->pid); //convertie le pid du pc vers la langue du reseau (little -> big endian)
+	data->icmp->un.echo.id = htons(data->pid);
 }
 
-/* Calcule le checksum ICMP du paquet avant l'envoi sur le réseau. */
+/* Compute the ICMP checksum before sending. */
 void icmp_checksum(PingData *data)
 {
 	data->icmp->checksum = 0;

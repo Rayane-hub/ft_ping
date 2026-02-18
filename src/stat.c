@@ -1,8 +1,8 @@
-/* Calcule et affiche les statistiques RTT et perte de paquets. */
+/* Compute and print RTT and packet loss statistics. */
 
 #include "ping.h"
 
-/* Met à jour les stats RTT (min, max, somme, somme des carrés). */
+/* Update RTT stats (min, max, sum, sum of squares). */
 void compute_stat(PingData *data, double deltaT)
 {
 	if (data->rtt_min > deltaT)
@@ -13,7 +13,7 @@ void compute_stat(PingData *data, double deltaT)
 	data->rtt_sum_sq += deltaT*deltaT;
 }
 
-/* Affiche le résumé final: paquets et métriques RTT. */
+/* Print final summary: packets and RTT metrics. */
 void print_stat(PingData *data)
 {
 	double avg = 0;

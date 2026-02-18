@@ -1,32 +1,36 @@
+/* Init helpers: argument parsing, host resolution, socket setup. */
+
 #include "ping.h"
 
+/* Parse CLI flags and extract the host. */
 int check_flag(int ac, char **av, char **host) {
 	int check_v; // 0 = normal, 2 = verbose
 
-	check_v = 0; // valeur initiale
+	check_v = 0; // initial value
 	for(int i = 1 ; i < ac ; i++)
 	{
 		if (av[i] && !*host && av[i][0] != '-')
-			*host = av[i]; // premier argument non-option = host
+			*host = av[i];
 		if (av[i] && av[i][0] == '-')
 		{
 			if (!*host && av[i][1] == '\0')
-				return(printf("ping: unknown host\n"), 1); // '-' seul -> erreur
+				return(printf("ping: unknown host\n"), 1);
 			if (av[i][1] == '?'){
-				printf("Usage: ft_ping [-v] destination\n-v    verbose output\n-?    display this help\n"); // aide
+				printf("Usage: ft_ping [-v] destination\n-v    verbose output\n-?    display this help\n");
 				exit(0);
 			}
 				else if (av[i][1] == 'v')
-				check_v = 2; // mode verbose
+				check_v = 2; // verbose mode
 			else if (av[i][1] != '\0')
-				return(printf("ping: invalid option -- '%c'\nTry 'ping --help' or 'ping --usage' for more information.\n", av[i][1]), 64); // option invalide
+				return(printf("ping: invalid option -- '%c'\nTry 'ping --help' or 'ping --usage' for more information.\n", av[i][1]), 64);
 		}
 	}
 	if (*host == NULL)
-		return(printf("ping: missing host operand\nTry 'ping --help' or 'ping --usage' for more information.\n"), 64); // pas de host fourni
+		return(printf("ping: missing host operand\nTry 'ping --help' or 'ping --usage' for more information.\n"), 64); 
 	return (check_v);
 }
 
+/* Initialize runtime data before starting the ping loop. */
 void init_data(PingData *data)
 {
 	data->received = 0;
@@ -38,6 +42,7 @@ void init_data(PingData *data)
 	data->host = NULL;
 }
 
+/* Resolve hostname and store the target IPv4 string. */
 int resolve_host(PingData *data)
 {
 	struct addrinfo hints;
@@ -54,6 +59,7 @@ int resolve_host(PingData *data)
 	return (0);
 }
 
+/* Create raw socket and configure receive timeout. */
 int init_socket(PingData *data)
 {
 	data->sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
@@ -64,6 +70,6 @@ int init_socket(PingData *data)
 	timeout.tv_sec = 1;
 	timeout.tv_usec = 0;
 	if (setsockopt(data->sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout))) 
-		return(perror("socket"), freeaddrinfo(data->res), 1);
+		return(perror("setsockopt"), freeaddrinfo(data->res), 1);
 	return (0);
 }

@@ -1,5 +1,6 @@
 #include "ping.h"
 
+/* Entry point: parse args, init, run loop, print stats. */
 int main(int ac, char **av) {
 	PingData data;
 
